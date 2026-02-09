@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-nordic-bg text-nordic-text font-sans antialiased;
+  }
+}
+
+/* Custom Scrollbar for "Nordic" feel */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  @apply bg-nordic-bg;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-nordic-muted rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-nordic-accent;
+}
