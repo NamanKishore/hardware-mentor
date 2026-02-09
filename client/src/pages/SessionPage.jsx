@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
+import axios from 'axios';
 import ChatSidebar from '../components/ChatSidebar';
 import StepViewer from '../components/StepViewer';
 import CameraModal from '../components/CameraModal';
 import { projects } from '../data/projects';
+import { playBase64Audio } from '../utils/audioUtils';
 
 const SessionPage = ({ projectId, onExit }) => {
     const project = projects[projectId];
@@ -13,42 +15,80 @@ const SessionPage = ({ projectId, onExit }) => {
     const [isCameraOpen, setIsCameraOpen] = useState(false);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
 
-    // Mock Mode: Logic to simulate AI feedback
-    const handleCapture = async (imageSrc) => {
+    // Real Backend Integration
+    const handleCapture = async (imageSrc, audioBlob) => {
         setIsAnalyzing(true);
 
-        // Simulate network delay
-        setTimeout(() => {
-            setIsAnalyzing(false);
-            setIsCameraOpen(false);
+        try {
+            const formData = new FormData();
 
-            // MOCK LOGIC: Randomly succeed or fail distinctively for demo
-            // In real app, this would be the Gemini response
-            const mockSuccess = Math.random() > 0.3; // 70% success rate for demo
+            // Convert base64 image to blob
+            const fetchResponse = await fetch(imageSrc);
+            const imageBlob = await fetchResponse.blob();
+            formData.append("image", imageBlob, "step_capture.jpg");
 
-            if (mockSuccess) {
+            if (audioBlob) {
+                formData.append("audio", audioBlob, "user_query.wav");
+            }
+
+            // Add Context
+            const currentStep = project.steps[currentStepIndex];
+            const context = `Project: ${project.title}. Step ${currentStepIndex + 1}: ${currentStep.title}. ${currentStep.description}`;
+            formData.append("step_context", context);
+
+            // Call Backend
+            const response = await axios.post("http://localhost:8000/analyze", formData, {
+                headers: { "Content-Type": "multipart/form-data" }
+            });
+
+            const { status, feedback, audio } = response.data;
+
+            if (status === "success" || status === "ok") {
                 setMessages(prev => [...prev, {
                     sender: 'ai',
-                    text: "Excellent soldering! The joint looks shiny and covers the pad effectively. You're ready for the next step."
+                    text: feedback || "Analysis received."
                 }]);
-                // Auto-advance if not last step
-                if (currentStepIndex < project.steps.length - 1) {
-                    setTimeout(() => setCurrentStepIndex(prev => prev + 1), 1500);
+
+                if (audio) {
+                    playBase64Audio(audio);
+                } else if (feedback) {
+                    // Fallback to Browser TTS (since 1.5 Flash doesn't return audio)
+                    const utterance = new SpeechSynthesisUtterance(feedback);
+                    utterance.rate = 1.0;
+                    utterance.pitch = 1.0;
+                    window.speechSynthesis.speak(utterance);
+                }
+
+                // Heuristic to advance step if feedback seems positive
+                if (feedback && (feedback.toLowerCase().includes("good") || feedback.toLowerCase().includes("great") || feedback.toLowerCase().includes("excellent"))) {
+                    if (currentStepIndex < project.steps.length - 1) {
+                        setTimeout(() => setCurrentStepIndex(prev => prev + 1), 3000);
+                    }
                 }
             } else {
                 setMessages(prev => [...prev, {
                     sender: 'ai',
-                    text: "It looks like a 'cold joint'. The solder looks dull and hasn't flowed well. Try reheating the joint and adding a tiny bit more solder."
+                    text: "I encountered an error analyzing that. Could you try again?"
                 }]);
             }
-        }, 2000);
+
+        } catch (error) {
+            console.error("Analysis Error:", error);
+            setMessages(prev => [...prev, {
+                sender: 'ai',
+                text: "Sorry, I couldn't connect to the Brain. Is the backend running?"
+            }]);
+        } finally {
+            setIsAnalyzing(false);
+            setIsCameraOpen(false);
+        }
     };
 
     const handleSendMessage = (text) => {
         setMessages(prev => [...prev, { sender: 'user', text }]);
-        // Mock response
+        // Mock response for chat (vision is the main part)
         setTimeout(() => {
-            setMessages(prev => [...prev, { sender: 'ai', text: "I'm in Mock Mode right now, but I'd normally answer your question about: " + text }]);
+            setMessages(prev => [...prev, { sender: 'ai', text: "I'm listening! For best results, use the 'Check My Work' button to show me what you're doing." }]);
         }, 1000);
     };
 
